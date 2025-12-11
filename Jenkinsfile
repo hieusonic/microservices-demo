@@ -1,5 +1,5 @@
 pipeline {
-    agent {label 'lab'}
+    agent { label 'lab' }
 
     stages {
 
@@ -31,7 +31,7 @@ pipeline {
             steps {
                 script {
 
-                    echo " Đọc danh sách service trong thư mục src/ ..."
+                    echo "📁 Đọc danh sách service trong thư mục src/ ..."
 
                     // Lấy tất cả folder trong src
                     def services = sh(
@@ -39,23 +39,27 @@ pipeline {
                         returnStdout: true
                     ).trim().split("\n")
 
-                    echo " Danh sách service: ${services}"
+                    echo "📄 Danh sách service: ${services}"
 
-                    // Chỉ lấy 2 service đầu tiên nếu có
-                    def targets = services.take(2)
+                    // Lấy 2 service đầu tiên - cách an toàn không bị sandbox block
+                    def targets = []
+                    for (int i = 0; i < services.size() && i < 2; i++) {
+                        targets << services[i]
+                    }
 
-                    echo " Sẽ build 2 service đầu tiên: ${targets}"
+                    echo "🚀 Sẽ build 2 service đầu tiên: ${targets}"
 
+                    // Build từng service
                     targets.each { svc ->
 
                         def dockerfilePath = "src/${svc}/Dockerfile"
 
                         if (!fileExists(dockerfilePath)) {
-                            echo " Bỏ qua ${svc} vì không có Dockerfile"
+                            echo "⚠️ Bỏ qua ${svc} vì không có Dockerfile"
                             return
                         }
 
-                        echo " Building Docker image for: ${svc}"
+                        echo "🐳 Building Docker image for: ${svc}"
 
                         sh """
                             docker build \
