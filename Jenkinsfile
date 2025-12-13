@@ -2,72 +2,70 @@ pipeline {
     agent { label 'lab' }
 
     stages {
-
-        stage('Detect Branch') {
+        stage('Detect Changes') {
             steps {
                 script {
-                    BRANCH = env.BRANCH_NAME
-                    echo "🔎 Current branch: ${BRANCH}"
+
+                    // Lấy danh sách file thay đổi
+                    def changed = sh(
+                        script: "git diff --name-only HEAD~1 HEAD",
+                        returnStdout: true
+                    ).trim().split("\n")
+
+                    echo "Changed files:\n${changed}"
+
+                    // Tập hợp service cần build
+                    servicesToBuild = [] as Set
+
+                    changed.each { file ->
+                        // Kiểm tra file thuộc src/<service>/
+                        if (file.startsWith("src/")) {
+                            def parts = file.split("/")
+                            if (parts.size() >= 2) {
+                                def service = parts[1]  // ví dụ src/frontend/app.js → frontend
+                                servicesToBuild << service
+                            }
+                        }
+                    }
+
+                    if (servicesToBuild.isEmpty()) {
+                        echo "⚠️ No changes detected inside /src, skipping build."
+                        currentBuild.result = 'SUCCESS'
+                        sh "exit 0"
+                    }
+
+                    echo "Services to build: ${servicesToBuild}"
                 }
             }
         }
 
-        /* ========== TEST cho cả 2 nhánh ========== */
-        stage('Test') {
+        stage('Build Services') {
             when {
-                expression { env.BRANCH_NAME in ["main", "Stage-file-JSON"] }
-            }
-            steps {
-                echo "🧪 Running Tests..."
-                sh 'echo "run test here..."'
-            }
-        }
-
-        /* ========== DOCKER BUILD chỉ cho main ========== */
-        stage('Docker Build') {
-            when {
-                expression { env.BRANCH_NAME == "main" }
+                expression { return servicesToBuild && servicesToBuild.size() > 0 }
             }
             steps {
                 script {
+                    def parallelStages = [:]
 
-                    echo "📁 Đọc danh sách service trong thư mục src/ ..."
+                    servicesToBuild.each { svc ->
+                        parallelStages["Build ${svc}"] = {
+                            stage("Build ${svc}") {
+                                def path = "src/${svc}/Dockerfile"
 
-                    // Lấy tất cả folder trong src
-                    def services = sh(
-                        script: "ls -1 src",
-                        returnStdout: true
-                    ).trim().split("\n")
+                                if (!fileExists(path)) {
+                                    echo "⚠️ Service '${svc}' does not have a Dockerfile → skipping."
+                                    return
+                                }
 
-                    echo "📄 Danh sách service: ${services}"
-
-                    // Lấy 2 service đầu tiên - cách an toàn không bị sandbox block
-                    def targets = []
-                    for (int i = 0; i < services.size() && i < 2; i++) {
-                        targets << services[i]
-                    }
-
-                    echo "🚀 Sẽ build 2 service đầu tiên: ${targets}"
-
-                    // Build từng service
-                    targets.each { svc ->
-
-                        def dockerfilePath = "src/${svc}/Dockerfile"
-
-                        if (!fileExists(dockerfilePath)) {
-                            echo "⚠️ Bỏ qua ${svc} vì không có Dockerfile"
-                            return
+                                sh """
+                                    echo "🔨 Building ${svc}"
+                                    docker build -t ${svc}:latest src/${svc}
+                                """
+                            }
                         }
-
-                        echo "🐳 Building Docker image for: ${svc}"
-
-                        sh """
-                            docker build \
-                                -f ${dockerfilePath} \
-                                -t ${svc}:latest \
-                                src/${svc}
-                        """
                     }
+
+                    parallel parallelStages
                 }
             }
         }
