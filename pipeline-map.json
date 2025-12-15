@@ -1,6 +1,7 @@
 {
-  "stages": [
-    "build",
-    "test"
-  ]
-}
+  "dev": {
+    "stages": ["test"]
+  },
+  "uat": {
+    "stages": ["build", "test"]
+  }
