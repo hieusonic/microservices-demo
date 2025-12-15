@@ -1,6 +1,14 @@
 pipeline {
     agent { label 'lab' }
 
+    parameters {
+        choice(
+            name: 'ENV',
+            choices: ['dev', 'uat'],
+            description: 'Select environment'
+        )
+    }
+
     options {
         timestamps()
     }
@@ -10,14 +18,20 @@ pipeline {
         stage('Load Config') {
             steps {
                 script {
-                    def serviceCfg = readJSON file: 'services.json'
+                    def serviceCfg  = readJSON file: 'services.json'
                     def pipelineCfg = readJSON file: 'pipeline-map.json'
 
                     SERVICES = serviceCfg.services
-                    PIPELINE_STAGES = pipelineCfg.stages
 
-                    echo "📦 Services to build: ${SERVICES}"
-                    echo "🧩 Pipeline stages: ${PIPELINE_STAGES}"
+                    if (!pipelineCfg.containsKey(params.ENV)) {
+                        error "❌ ENV '${params.ENV}' not found in pipeline-map.json"
+                    }
+
+                    PIPELINE_STAGES = pipelineCfg[params.ENV].stages
+
+                    echo "🌍 Environment: ${params.ENV}"
+                    echo "📦 Services: ${SERVICES}"
+                    echo "🧩 Stages for ENV: ${PIPELINE_STAGES}"
                 }
             }
         }
@@ -51,7 +65,7 @@ pipeline {
                                 if (PIPELINE_STAGES.contains("test")) {
                                     sh """
                                         echo "🧪 Testing ${svc}"
-                                        echo "(demo test step for ${svc})"
+                                        echo "(demo test for ${svc})"
                                     """
                                 }
                             }
@@ -66,10 +80,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Pipeline completed successfully"
+            echo "✅ Pipeline SUCCESS for ENV=${params.ENV}"
         }
         failure {
-            echo "❌ Pipeline failed"
+            echo "❌ Pipeline FAILED for ENV=${params.ENV}"
         }
     }
 }
