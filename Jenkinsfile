@@ -4,6 +4,9 @@ pipeline {
     options {
         timestamps()
     }
+
+    stages {
+
         stage('Load Config') {
             steps {
                 script {
@@ -28,7 +31,7 @@ pipeline {
                     def parallelStages = [:]
 
                     SERVICES.each { svc ->
-                        parallelStages["${svc}"] = {
+                        parallelStages[svc] = {
                             stage("Service: ${svc}") {
 
                                 def dockerfilePath = "src/${svc}/Dockerfile"
