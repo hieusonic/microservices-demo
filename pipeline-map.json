@@ -5,3 +5,4 @@
   "uat": {
     "stages": ["build", "test"]
   }
+}
