@@ -1,3 +1,6 @@
+def SERVICES = []
+def PIPELINE_STAGES = []
+
 pipeline {
     agent { label 'lab' }
 
