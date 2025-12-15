@@ -1,0 +1,7 @@
+{
+  "services": [
+    "checkoutservice",
+    "adservice",
+    "currencyservice"
+  ]
+}
