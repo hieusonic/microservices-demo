@@ -2,9 +2,9 @@ pipeline {
     agent { label 'lab' }
 
     environment {
-        PIPELINE_ENV    = ''
-        ACTIVE_STAGES   = ''
-        SERVICES        = ''
+        PIPELINE_ENV  = ''
+        ACTIVE_STAGES = ''
+        SERVICES      = ''
     }
 
     stages {
@@ -12,15 +12,12 @@ pipeline {
         stage('Detect Context') {
             steps {
                 script {
-                    // ===== Load config files =====
                     def branchEnvMap = readJSON file: 'branch-env-map.json'
                     def pipelineMap  = readJSON file: 'pipeline-map.json'
                     def serviceMap   = readJSON file: 'services.json'
 
-                    // ===== Detect branch =====
                     def branch = env.BRANCH_NAME ?: 'develop'
 
-                    // ===== Resolve ENV =====
                     def detectedEnv = null
                     branchEnvMap.each { k, v ->
                         if (branch == k || branch.startsWith("${k}/")) {
@@ -35,15 +32,13 @@ pipeline {
                     }
 
                     if (!pipelineMap.containsKey(detectedEnv)) {
-                        error "❌ ENV '${detectedEnv}' chưa được định nghĩa trong pipeline-map.json"
+                        error "❌ ENV '${detectedEnv}' chưa có trong pipeline-map.json"
                     }
 
-                    // ===== Export to env (Declarative-safe) =====
                     env.PIPELINE_ENV  = detectedEnv
-                    env.ACTIVE_STAGES = pipelineMap[detectedEnv].join(',')
-                    env.SERVICES      = serviceMap.services.join(',')
+                    env.ACTIVE_STAGES = pipelineMap[detectedEnv].toList().join(',')
+                    env.SERVICES      = serviceMap.services.toList().join(',')
 
-                    // ===== Debug log =====
                     echo "🌿 Branch         : ${branch}"
                     echo "🌍 ENV            : ${env.PIPELINE_ENV}"
                     echo "🚀 Pipeline stages: ${env.ACTIVE_STAGES}"
