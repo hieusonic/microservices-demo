@@ -6,24 +6,27 @@ pipeline {
         stage('Detect Context') {
             steps {
                 script {
+                    // Read config files
                     def branchEnvMap = readJSON file: 'branch-env-map.json'
                     def pipelineMap  = readJSON file: 'pipeline-map.json'
                     def servicesCfg  = readJSON file: 'services.json'
 
                     def branch = env.BRANCH_NAME
 
+                    // Map branch -> ENV
                     if (!branchEnvMap.containsKey(branch)) {
                         error "❌ No ENV mapped for branch: ${branch}"
                     }
 
                     env.RUN_ENV = branchEnvMap[branch]
 
-                    // ⚠️ FIX QUAN TRỌNG Ở ĐÂY
-                    def rawStages = pipelineMap[env.RUN_ENV]
+                    // IMPORTANT FIX: pipeline-map has key "stages"
+                    def rawStages = pipelineMap[env.RUN_ENV].stages
                     def activeStages = rawStages.collect { it.toString() }
 
                     def services = servicesCfg.services.collect { it.toString() }
 
+                    // Store as env string (safe for declarative when)
                     env.PIPELINE_STAGES = activeStages.join(',')
                     env.SERVICES        = services.join(',')
 
@@ -43,6 +46,7 @@ pipeline {
             }
             steps {
                 echo "🧪 Running tests"
+                sh 'echo "run unit test here"'
             }
         }
 
