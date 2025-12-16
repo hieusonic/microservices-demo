@@ -1,28 +1,11 @@
 pipeline {
     agent { label 'lab' }
 
-    options {
-        skipDefaultCheckout(true)
-    }
-
     stages {
 
-        /* =========================
-           1. Checkout
-        ========================== */
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        /* =========================
-           2. Detect Context
-        ========================== */
         stage('Detect Context') {
             steps {
                 script {
-                    // Read JSON files (return Map/List thuần)
                     def branchEnvMap = readJSON(
                         file: 'branch-env-map.json',
                         returnPojo: true
@@ -33,44 +16,40 @@ pipeline {
                         returnPojo: true
                     )
 
-                    def servicesConfig = readJSON(
+                    def servicesCfg = readJSON(
                         file: 'services.json',
                         returnPojo: true
                     )
 
-                    // Detect branch
                     def branch = env.BRANCH_NAME
+
                     if (!branchEnvMap.containsKey(branch)) {
-                        error "❌ No environment mapped for branch: ${branch}"
+                        error "❌ No ENV mapped for branch: ${branch}"
                     }
 
-                    // Resolve ENV
                     env.RUN_ENV = branchEnvMap[branch]
 
-                    // Resolve stages to run
                     def stagesToRun = pipelineMap[env.RUN_ENV]
-                    if (!stagesToRun) {
-                        error "❌ No pipeline stages defined for env: ${env.RUN_ENV}"
+                    if (!(stagesToRun instanceof List)) {
+                        error "❌ pipeline-map.json: ENV must map to list"
                     }
 
-                    // Resolve services
-                    def services = servicesConfig.services ?: []
+                    def services = servicesCfg.services
+                    if (!(services instanceof List)) {
+                        error "❌ services.json: services must be list"
+                    }
 
-                    // Export to env (string only)
                     env.PIPELINE_STAGES = stagesToRun.join(',')
-                    env.SERVICES = services.join(',')
+                    env.SERVICES        = services.join(',')
 
-                    echo "✅ Branch      : ${branch}"
-                    echo "✅ Environment : ${env.RUN_ENV}"
-                    echo "✅ Stages      : ${env.PIPELINE_STAGES}"
-                    echo "✅ Services    : ${env.SERVICES}"
+                    echo "🌿 Branch : ${branch}"
+                    echo "🌍 ENV    : ${env.RUN_ENV}"
+                    echo "🚦 Stages : ${env.PIPELINE_STAGES}"
+                    echo "📦 Svcs   : ${env.SERVICES}"
                 }
             }
         }
 
-        /* =========================
-           3. Test
-        ========================== */
         stage('Test') {
             when {
                 expression {
@@ -78,14 +57,10 @@ pipeline {
                 }
             }
             steps {
-                echo "🧪 Running tests for ENV=${env.RUN_ENV}"
-                // sh 'make test' (ví dụ)
+                echo "🧪 Running tests"
             }
         }
 
-        /* =========================
-           4. Build Services
-        ========================== */
         stage('Build Services') {
             when {
                 expression {
@@ -94,19 +69,18 @@ pipeline {
             }
             steps {
                 script {
-                    def services = env.SERVICES.split(',')
-
-                    services.each { svc ->
+                    env.SERVICES.split(',').each { svc ->
                         stage("Build ${svc}") {
                             def dockerfile = "src/${svc}/Dockerfile"
 
                             if (!fileExists(dockerfile)) {
-                                error "❌ Dockerfile not found for service: ${svc}"
+                                echo "⚠️ ${svc}: no Dockerfile → skip"
+                                return
                             }
 
-                            echo "🐳 Building ${svc}"
                             sh """
-                                docker build -t ${svc}:latest src/${svc}
+                                echo "🐳 Building ${svc}"
+                                docker build -t ${svc}:${env.RUN_ENV} src/${svc}
                             """
                         }
                     }
