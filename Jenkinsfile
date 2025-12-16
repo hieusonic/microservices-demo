@@ -8,7 +8,7 @@ pipeline {
                 script {
                     def branchEnvMap = readJSON file: 'branch-env-map.json'
                     def pipelineMap  = readJSON file: 'pipeline-map.json'
-                    def serviceMap   = readJSON file: 'services-map.json'
+                    def serviceMap   = readJSON file: 'services.json'
 
                     def branch = env.BRANCH_NAME
                     ENV = null
