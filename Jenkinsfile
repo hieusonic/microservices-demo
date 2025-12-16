@@ -1,92 +1,81 @@
-def SERVICES = []
-def PIPELINE_STAGES = []
-
 pipeline {
     agent { label 'lab' }
 
-    parameters {
-        choice(
-            name: 'ENV',
-            choices: ['dev', 'uat'],
-            description: 'Select environment'
-        )
-    }
-
-    options {
-        timestamps()
-    }
-
     stages {
 
-        stage('Load Config') {
+        stage('Detect Context') {
             steps {
                 script {
-                    def serviceCfg  = readJSON file: 'services.json'
-                    def pipelineCfg = readJSON file: 'pipeline-map.json'
+                    def branchEnvMap = readJSON file: 'branch-env-map.json'
+                    def pipelineMap  = readJSON file: 'pipeline-map.json'
+                    def serviceMap   = readJSON file: 'services-map.json'
 
-                    SERVICES = serviceCfg.services
+                    def branch = env.BRANCH_NAME
+                    ENV = null
 
-                    if (!pipelineCfg.containsKey(params.ENV)) {
-                        error "❌ ENV '${params.ENV}' not found in pipeline-map.json"
+                    // Detect ENV từ branch name
+                    branchEnvMap.each { k, v ->
+                        if (branch == k || branch.startsWith("${k}/")) {
+                            ENV = v
+                        }
                     }
 
-                    PIPELINE_STAGES = pipelineCfg[params.ENV].stages
+                    if (!ENV) {
+                        echo "⚠️ No ENV mapping for branch: ${branch}"
+                        currentBuild.result = 'SUCCESS'
+                        return
+                    }
 
-                    echo "🌍 Environment: ${params.ENV}"
-                    echo "📦 Services: ${SERVICES}"
-                    echo "🧩 Stages for ENV: ${PIPELINE_STAGES}"
+                    ACTIVE_STAGES = pipelineMap[ENV]
+                    SERVICES = serviceMap.services
+
+                    echo "🌿 Branch        : ${branch}"
+                    echo "🌍 ENV           : ${ENV}"
+                    echo "🚀 Pipeline stages: ${ACTIVE_STAGES}"
+                    echo "📦 Services      : ${SERVICES}"
                 }
             }
         }
 
-        stage('Build & Test Services') {
+        stage('Test') {
             when {
-                expression { SERVICES && SERVICES.size() > 0 }
+                expression { ACTIVE_STAGES?.contains('test') }
+            }
+            steps {
+                echo "🧪 Running tests"
+                sh 'echo "run unit test here"'
+            }
+        }
+
+        stage('Build Services') {
+            when {
+                expression { ACTIVE_STAGES?.contains('build') }
             }
             steps {
                 script {
-                    def parallelStages = [:]
+                    def parallelBuilds = [:]
 
                     SERVICES.each { svc ->
-                        parallelStages[svc] = {
-                            stage("Service: ${svc}") {
+                        parallelBuilds["Build ${svc}"] = {
+                            stage("Build ${svc}") {
+                                def path = "src/${svc}/Dockerfile"
 
-                                def dockerfilePath = "src/${svc}/Dockerfile"
-
-                                if (!fileExists(dockerfilePath)) {
-                                    echo "⚠️ ${svc} has no Dockerfile → skipping"
+                                if (!fileExists(path)) {
+                                    echo "⚠️ ${svc} has no Dockerfile → skip"
                                     return
                                 }
 
-                                if (PIPELINE_STAGES.contains("build")) {
-                                    sh """
-                                        echo "🔨 Building ${svc}"
-                                        docker build -t ${svc}:latest src/${svc}
-                                    """
-                                }
-
-                                if (PIPELINE_STAGES.contains("test")) {
-                                    sh """
-                                        echo "🧪 Testing ${svc}"
-                                        echo "(demo test for ${svc})"
-                                    """
-                                }
+                                sh """
+                                    echo "🐳 Building ${svc}"
+                                    docker build -t ${svc}:${ENV} src/${svc}
+                                """
                             }
                         }
                     }
 
-                    parallel parallelStages
+                    parallel parallelBuilds
                 }
             }
-        }
-    }
-
-    post {
-        success {
-            echo "✅ Pipeline SUCCESS for ENV=${params.ENV}"
-        }
-        failure {
-            echo "❌ Pipeline FAILED for ENV=${params.ENV}"
         }
     }
 }
