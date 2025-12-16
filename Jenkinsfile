@@ -1,3 +1,5 @@
+import groovy.json.JsonSlurperClassic
+
 pipeline {
     agent { label 'lab' }
 
@@ -12,12 +14,15 @@ pipeline {
         stage('Detect Context') {
             steps {
                 script {
-                    def branchEnvMap = readJSON file: 'branch-env-map.json'
-                    def pipelineMap  = readJSON file: 'pipeline-map.json'
-                    def serviceMap   = readJSON file: 'services.json'
+                    def slurper = new JsonSlurperClassic()
+
+                    def branchEnvMap = slurper.parseText(readFile('branch-env-map.json'))
+                    def pipelineMap  = slurper.parseText(readFile('pipeline-map.json'))
+                    def serviceMap   = slurper.parseText(readFile('services.json'))
 
                     def branch = env.BRANCH_NAME ?: 'develop'
 
+                    // ===== Detect ENV =====
                     def detectedEnv = null
                     branchEnvMap.each { k, v ->
                         if (branch == k || branch.startsWith("${k}/")) {
@@ -32,12 +37,13 @@ pipeline {
                     }
 
                     if (!pipelineMap.containsKey(detectedEnv)) {
-                        error "❌ ENV '${detectedEnv}' chưa có trong pipeline-map.json"
+                        error "❌ ENV '${detectedEnv}' chưa được định nghĩa trong pipeline-map.json"
                     }
 
+                    // ===== Export SAFE types =====
                     env.PIPELINE_ENV  = detectedEnv
-                    env.ACTIVE_STAGES = pipelineMap[detectedEnv].toList().join(',')
-                    env.SERVICES      = serviceMap.services.toList().join(',')
+                    env.ACTIVE_STAGES = pipelineMap[detectedEnv].join(',')
+                    env.SERVICES      = serviceMap.services.join(',')
 
                     echo "🌿 Branch         : ${branch}"
                     echo "🌍 ENV            : ${env.PIPELINE_ENV}"
