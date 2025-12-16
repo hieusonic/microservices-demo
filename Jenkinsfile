@@ -6,20 +6,9 @@ pipeline {
         stage('Detect Context') {
             steps {
                 script {
-                    def branchEnvMap = readJSON(
-                        file: 'branch-env-map.json',
-                        returnPojo: true
-                    )
-
-                    def pipelineMap = readJSON(
-                        file: 'pipeline-map.json',
-                        returnPojo: true
-                    )
-
-                    def servicesCfg = readJSON(
-                        file: 'services.json',
-                        returnPojo: true
-                    )
+                    def branchEnvMap = readJSON file: 'branch-env-map.json'
+                    def pipelineMap  = readJSON file: 'pipeline-map.json'
+                    def servicesCfg  = readJSON file: 'services.json'
 
                     def branch = env.BRANCH_NAME
 
@@ -29,17 +18,13 @@ pipeline {
 
                     env.RUN_ENV = branchEnvMap[branch]
 
-                    def stagesToRun = pipelineMap[env.RUN_ENV]
-                    if (!(stagesToRun instanceof List)) {
-                        error "❌ pipeline-map.json: ENV must map to list"
-                    }
+                    // ⚠️ FIX QUAN TRỌNG Ở ĐÂY
+                    def rawStages = pipelineMap[env.RUN_ENV]
+                    def activeStages = rawStages.collect { it.toString() }
 
-                    def services = servicesCfg.services
-                    if (!(services instanceof List)) {
-                        error "❌ services.json: services must be list"
-                    }
+                    def services = servicesCfg.services.collect { it.toString() }
 
-                    env.PIPELINE_STAGES = stagesToRun.join(',')
+                    env.PIPELINE_STAGES = activeStages.join(',')
                     env.SERVICES        = services.join(',')
 
                     echo "🌿 Branch : ${branch}"
