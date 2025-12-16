@@ -1,79 +1,99 @@
 pipeline {
     agent { label 'lab' }
 
+    environment {
+        PIPELINE_ENV    = ''
+        ACTIVE_STAGES   = ''
+        SERVICES        = ''
+    }
+
     stages {
 
         stage('Detect Context') {
             steps {
                 script {
+                    // ===== Load config files =====
                     def branchEnvMap = readJSON file: 'branch-env-map.json'
                     def pipelineMap  = readJSON file: 'pipeline-map.json'
                     def serviceMap   = readJSON file: 'services.json'
 
-                    def branch = env.BRANCH_NAME
-                    ENV = null
+                    // ===== Detect branch =====
+                    def branch = env.BRANCH_NAME ?: 'develop'
 
-                    // Detect ENV từ branch name
+                    // ===== Resolve ENV =====
+                    def detectedEnv = null
                     branchEnvMap.each { k, v ->
                         if (branch == k || branch.startsWith("${k}/")) {
-                            ENV = v
+                            detectedEnv = v
                         }
                     }
 
-                    if (!ENV) {
+                    if (!detectedEnv) {
                         echo "⚠️ No ENV mapping for branch: ${branch}"
                         currentBuild.result = 'SUCCESS'
                         return
                     }
 
-                    ACTIVE_STAGES = pipelineMap[ENV]
-                    SERVICES = serviceMap.services
+                    if (!pipelineMap.containsKey(detectedEnv)) {
+                        error "❌ ENV '${detectedEnv}' chưa được định nghĩa trong pipeline-map.json"
+                    }
 
-                    echo "🌿 Branch        : ${branch}"
-                    echo "🌍 ENV           : ${ENV}"
-                    echo "🚀 Pipeline stages: ${ACTIVE_STAGES}"
-                    echo "📦 Services      : ${SERVICES}"
+                    // ===== Export to env (Declarative-safe) =====
+                    env.PIPELINE_ENV  = detectedEnv
+                    env.ACTIVE_STAGES = pipelineMap[detectedEnv].join(',')
+                    env.SERVICES      = serviceMap.services.join(',')
+
+                    // ===== Debug log =====
+                    echo "🌿 Branch         : ${branch}"
+                    echo "🌍 ENV            : ${env.PIPELINE_ENV}"
+                    echo "🚀 Pipeline stages: ${env.ACTIVE_STAGES}"
+                    echo "📦 Services       : ${env.SERVICES}"
                 }
             }
         }
 
         stage('Test') {
             when {
-                expression { ACTIVE_STAGES?.contains('test') }
+                expression {
+                    env.ACTIVE_STAGES.split(',').contains('test')
+                }
             }
             steps {
-                echo "🧪 Running tests"
+                echo "🧪 Running tests for ENV=${env.PIPELINE_ENV}"
                 sh 'echo "run unit test here"'
             }
         }
 
         stage('Build Services') {
             when {
-                expression { ACTIVE_STAGES?.contains('build') }
+                expression {
+                    env.ACTIVE_STAGES.split(',').contains('build')
+                }
             }
             steps {
                 script {
-                    def parallelBuilds = [:]
+                    def services = env.SERVICES.split(',')
+                    def builds = [:]
 
-                    SERVICES.each { svc ->
-                        parallelBuilds["Build ${svc}"] = {
+                    services.each { svc ->
+                        builds["Build ${svc}"] = {
                             stage("Build ${svc}") {
-                                def path = "src/${svc}/Dockerfile"
+                                def dockerfile = "src/${svc}/Dockerfile"
 
-                                if (!fileExists(path)) {
-                                    echo "⚠️ ${svc} has no Dockerfile → skip"
+                                if (!fileExists(dockerfile)) {
+                                    echo "⚠️ ${svc}: no Dockerfile → skip"
                                     return
                                 }
 
                                 sh """
                                     echo "🐳 Building ${svc}"
-                                    docker build -t ${svc}:${ENV} src/${svc}
+                                    docker build -t ${svc}:${env.PIPELINE_ENV} src/${svc}
                                 """
                             }
                         }
                     }
 
-                    parallel parallelBuilds
+                    parallel builds
                 }
             }
         }
